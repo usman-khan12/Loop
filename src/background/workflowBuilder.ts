@@ -9,6 +9,12 @@ export function buildWorkflow(
   rawEvents: RawRecordedEvent[],
   tabRefMap: Record<number, { ref: string; url: string; title: string }>
 ): Workflow {
+  const orderedEvents = [...rawEvents].sort((a, b) => {
+    const aTs = Date.parse(a.timestamp);
+    const bTs = Date.parse(b.timestamp);
+    return aTs - bTs;
+  });
+
   const steps: WorkflowStep[] = [];
   const tabRefs: Workflow['tabRefs'] = {};
 
@@ -18,7 +24,7 @@ export function buildWorkflow(
 
   let currentTabRef: string | null = null;
 
-  for (const event of rawEvents) {
+  for (const event of orderedEvents) {
     const tabInfo = tabRefMap[event.tabId];
     const tabRef = tabInfo?.ref ?? `tab_${event.tabId}`;
 

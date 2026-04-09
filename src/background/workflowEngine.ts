@@ -4,6 +4,7 @@ import {
   focusTab,
   openTabUrl,
   waitForTabLoad,
+  createAutomationTab,
   getAutomationTabIds,
   getAutomationWindowId,
 } from './tabManager';
@@ -224,21 +225,17 @@ async function handleFocusTab(
   const tabId = tabIds[tabRef];
 
   if (!tabId) {
-    // Try to create tab in automation window if we have a URL for this ref
     const refInfo = workflow.tabRefs[tabRef];
     if (refInfo) {
-      const windowId = getAutomationWindowId();
-      if (windowId) {
-        const tab = await chrome.tabs.create({ windowId, url: refInfo.url, active: true });
-        if (tab.id) {
-          tabIds[tabRef] = tab.id;
-          await waitForTabLoad(tab.id);
-          await ensureContentScript(tab.id);
-        }
+      const createdTabId = await createAutomationTab(tabRef, refInfo.url, true);
+      if (createdTabId) {
+        await focusTab(createdTabId);
+        appendLog(run, step.id, 'success', `✅ Opened and focused tab: ${workflow.tabRefs[tabRef]?.title ?? tabRef}`);
+        return { success: true };
       }
     }
     appendLog(run, step.id, 'warn', `Tab ref "${tabRef}" not found, skipping`);
-    return { success: true }; // non-fatal
+    return { success: true };
   }
 
   await focusTab(tabId);
@@ -266,7 +263,12 @@ async function handleOpenUrl(
     await ensureContentScript(tabId);
     appendLog(run, step.id, 'success', `✅ Navigated to ${url}`);
   } else {
-    appendLog(run, step.id, 'warn', `Tab not found for open_url: ${url}`);
+    const createdTabId = await createAutomationTab(tabRef, url, true);
+    if (createdTabId) {
+      appendLog(run, step.id, 'success', `✅ Opened new tab: ${url}`);
+    } else {
+      appendLog(run, step.id, 'warn', `Tab not found for open_url: ${url}`);
+    }
   }
 
   return { success: true };

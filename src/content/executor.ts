@@ -134,11 +134,38 @@ async function execFillInput(
     return { success: true };
   }
 
-  // contenteditable
-  if (el.getAttribute('contenteditable') === 'true') {
-    (el as HTMLElement).focus();
-    (el as HTMLElement).textContent = value;
-    el.dispatchEvent(new Event('input', { bubbles: true }));
+  if (el instanceof HTMLElement && el.isContentEditable) {
+    el.focus();
+
+    const selection = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+
+    let inserted = false;
+    try {
+      inserted = document.execCommand('insertText', false, value);
+    } catch {
+      inserted = false;
+    }
+
+    if (!inserted) {
+      el.textContent = value;
+    }
+
+    el.dispatchEvent(new InputEvent('beforeinput', {
+      bubbles: true,
+      cancelable: true,
+      inputType: 'insertText',
+      data: value,
+    }));
+    el.dispatchEvent(new InputEvent('input', {
+      bubbles: true,
+      inputType: 'insertText',
+      data: value,
+    }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
     return { success: true };
   }
 

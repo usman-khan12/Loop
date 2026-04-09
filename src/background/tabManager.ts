@@ -73,21 +73,6 @@ export async function createAutomationWindow(
     await ensureContentScript(win.tabs[0].id);
   }
 
-  // Open remaining tabs in same window
-  for (let i = 1; i < refs.length; i++) {
-    const [ref, info] = refs[i];
-    const tab = await chrome.tabs.create({
-      windowId: automationWindowId,
-      url: info.url,
-      active: false,
-    });
-    if (tab.id) {
-      automationTabIds[ref] = tab.id;
-      await waitForTabLoad(tab.id);
-      await ensureContentScript(tab.id);
-    }
-  }
-
   return { windowId: automationWindowId, tabMap: { ...automationTabIds } };
 }
 
@@ -112,6 +97,23 @@ export async function focusTab(tabId: number): Promise<void> {
 export async function openTabUrl(tabId: number, url: string): Promise<void> {
   await chrome.tabs.update(tabId, { url });
   await waitForTabLoad(tabId);
+}
+
+export async function createAutomationTab(tabRef: string, url: string, active = false): Promise<number | null> {
+  if (automationWindowId === null) return null;
+
+  const tab = await chrome.tabs.create({
+    windowId: automationWindowId,
+    url,
+    active,
+  });
+
+  if (!tab.id) return null;
+
+  automationTabIds[tabRef] = tab.id;
+  await waitForTabLoad(tab.id);
+  await ensureContentScript(tab.id);
+  return tab.id;
 }
 
 export async function waitForTabLoad(tabId: number, timeoutMs = 15_000): Promise<void> {

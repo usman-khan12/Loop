@@ -185,9 +185,10 @@ function handlePaste(e: ClipboardEvent): void {
     if (!descriptor) return;
 
     const { target, value } = descriptor;
-    if (!value) return;
+    const finalValue = value || pastedText;
+    if (!finalValue) return;
 
-    const event = makeEvent('fill_input', target, value);
+    const event = makeEvent('fill_input', target, finalValue);
     emitEvent(event);
   });
 }
@@ -301,7 +302,7 @@ function getFillDescriptor(target: EventTarget | null): {
     };
   }
 
-  const editable = target.closest('[contenteditable="true"]');
+  const editable = findEditableHost(target);
   if (editable instanceof Element) {
     return {
       element: editable,
@@ -315,4 +316,15 @@ function getFillDescriptor(target: EventTarget | null): {
 
 function isContentEditableElement(el: Element): boolean {
   return el.getAttribute('contenteditable') === 'true' || (el as HTMLElement).isContentEditable;
+}
+
+function findEditableHost(target: Element): HTMLElement | null {
+  let current: Element | null = target;
+  while (current) {
+    if (current instanceof HTMLElement && current.isContentEditable) {
+      return current;
+    }
+    current = current.parentElement;
+  }
+  return null;
 }
