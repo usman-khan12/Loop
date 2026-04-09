@@ -53,6 +53,9 @@ const state: BackgroundState = {
   automationTabMap: {},
 };
 
+const trackedTabUrls = new Map<number, string>();
+const pendingCreatedTabIds = new Set<number>();
+
 
 
 // ──────────────────────────────────────────────
@@ -78,36 +81,67 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
 
   try {
     const tab = await chrome.tabs.get(tabId);
-    if (!tab.url || tab.url.startsWith('chrome://')) return;
+    if (!isRecordableUrl(tab.url)) return;
 
-    const ref = registerTab(tabId, tab.url, tab.title ?? tab.url);
-    // Inject content script into newly activated tab
-    await ensureContentScript(tabId);
+    const ref = ensureTabRegistered(tabId, tab.url, tab.title ?? tab.url);
+    await startRecordingInTab(tabId);
 
     // Emit a focus_tab event
-    const event: RawRecordedEvent = {
+    recordBackgroundEvent({
       id: `ev_tab_${tabId}_${Date.now()}`,
       type: 'focus_tab',
       timestamp: new Date().toISOString(),
       tabId,
       tabRef: ref,
       url: tab.url,
-    };
-    state.recordedEvents.push(event);
-    broadcastRecordingEvent(event);
+    });
   } catch (err) {
     console.warn('[Loop] Tab tracking error:', err);
   }
 });
 
+chrome.tabs.onCreated.addListener((tab) => {
+  if (state.recordingState !== 'recording' || !tab.id) return;
+  pendingCreatedTabIds.add(tab.id);
+});
+
 chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
   if (state.recordingState !== 'recording') return;
   if (info.status !== 'complete') return;
-  if (!tab.url || tab.url.startsWith('chrome://')) return;
+  if (!isRecordableUrl(tab.url)) return;
 
-  // Update registration
-  registerTab(tabId, tab.url, tab.title ?? tab.url);
-  await ensureContentScript(tabId);
+  ensureTabRegistered(tabId, tab.url, tab.title ?? tab.url);
+
+  await startRecordingInTab(tabId);
+});
+
+chrome.webNavigation.onCommitted.addListener(async (details) => {
+  if (state.recordingState !== 'recording') return;
+  if (details.frameId !== 0) return;
+  if (!isRecordableUrl(details.url)) return;
+
+  try {
+    const tab = await chrome.tabs.get(details.tabId);
+    const previousUrl = trackedTabUrls.get(details.tabId);
+    const isNewTab = pendingCreatedTabIds.has(details.tabId) || !tabRefMap[details.tabId];
+    const ref = ensureTabRegistered(details.tabId, details.url, tab.title ?? details.url);
+
+    if (isNewTab || previousUrl !== details.url) {
+      recordBackgroundEvent({
+        id: `ev_nav_${details.tabId}_${Date.now()}`,
+        type: 'open_url',
+        timestamp: new Date().toISOString(),
+        tabId: details.tabId,
+        tabRef: ref,
+        url: details.url,
+      });
+    }
+
+    trackedTabUrls.set(details.tabId, details.url);
+    pendingCreatedTabIds.delete(details.tabId);
+  } catch (err) {
+    console.warn('[Loop] Navigation tracking error:', err);
+  }
 });
 
 // ──────────────────────────────────────────────
@@ -213,13 +247,15 @@ async function startRecording(_sender: chrome.runtime.MessageSender): Promise<{ 
   state.recordedEvents = [];
   clearTabRefMap();
   clearInjectedTabs();
+  trackedTabUrls.clear();
+  pendingCreatedTabIds.clear();
 
-  // Inject into the current active tab
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (tab?.id && tab.url && !tab.url.startsWith('chrome://')) {
-    registerTab(tab.id, tab.url, tab.title ?? tab.url);
-    await ensureContentScript(tab.id);
-    await chrome.tabs.sendMessage(tab.id, { type: 'START_RECORDING', source: 'background' });
+  const tabs = await chrome.tabs.query({ currentWindow: true });
+  for (const tab of tabs) {
+    if (!tab.id || !isRecordableUrl(tab.url)) continue;
+    ensureTabRegistered(tab.id, tab.url, tab.title ?? tab.url);
+    trackedTabUrls.set(tab.id, tab.url);
+    await startRecordingInTab(tab.id);
   }
 
   broadcastRecordingState();
@@ -245,6 +281,8 @@ async function stopRecordingAndSave(): Promise<{ success: boolean; workflow: Wor
 
   state.recordingState = 'idle';
   state.recordedEvents = [];
+  trackedTabUrls.clear();
+  pendingCreatedTabIds.clear();
   broadcastRecordingState();
 
   return { success: true, workflow };
@@ -259,8 +297,14 @@ function handleRecordingEvent(
   // Fill in tabId from sender
   if (sender.tab?.id) {
     event.tabId = sender.tab.id;
-    const info = tabRefMap[sender.tab.id];
-    if (info) event.tabRef = info.ref;
+    if (sender.tab.url && isRecordableUrl(sender.tab.url)) {
+      event.tabRef = ensureTabRegistered(
+        sender.tab.id,
+        sender.tab.url,
+        sender.tab.title ?? sender.tab.url
+      );
+      trackedTabUrls.set(sender.tab.id, sender.tab.url);
+    }
   }
 
   state.recordedEvents.push(event);
@@ -293,17 +337,19 @@ function handleVariableMarked(
 // Run workflow
 // ──────────────────────────────────────────────
 
-async function startWorkflowRun(workflow: Workflow): Promise<{ success: boolean; runId: string }> {
+async function startWorkflowRun(workflow: Workflow): Promise<{ success: boolean; runId: string; run: ReturnType<typeof createRun> }> {
   // Create automation window
   await createAutomationWindow(workflow.tabRefs);
 
   const run = createRun(workflow);
+  state.currentRun = run;
   // Map tabRefs for the run
   const tabMap = getAutomationTabIds();
   Object.assign(run, { automationTabMap: { ...tabMap } });
 
   // Execute async (don't await — return runId immediately)
   executeWorkflow(workflow, run).then(async (completedRun) => {
+    state.currentRun = completedRun;
     await saveRun(completedRun);
     const settings = await getSettings();
     if (settings.autoCloseAutomationWindow) {
@@ -311,7 +357,7 @@ async function startWorkflowRun(workflow: Workflow): Promise<{ success: boolean;
     }
   });
 
-  return { success: true, runId: run.id };
+  return { success: true, runId: run.id, run };
 }
 
 // ──────────────────────────────────────────────
@@ -338,4 +384,33 @@ function broadcastRecordingEvent(event: RawRecordedEvent): void {
       eventCount: state.recordedEvents.length,
     },
   }).catch(() => {});
+}
+
+function isRecordableUrl(url?: string): url is string {
+  return Boolean(
+    url &&
+    (url.startsWith('http://') || url.startsWith('https://'))
+  );
+}
+
+function ensureTabRegistered(tabId: number, url: string, title: string): string {
+  const existing = tabRefMap[tabId];
+  if (existing) {
+    return existing.ref;
+  }
+
+  return registerTab(tabId, url, title);
+}
+
+async function startRecordingInTab(tabId: number): Promise<void> {
+  await ensureContentScript(tabId);
+  await chrome.tabs.sendMessage(tabId, {
+    type: 'START_RECORDING',
+    source: 'background',
+  }).catch(() => {});
+}
+
+function recordBackgroundEvent(event: RawRecordedEvent): void {
+  state.recordedEvents.push(event);
+  broadcastRecordingEvent(event);
 }

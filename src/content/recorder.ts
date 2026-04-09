@@ -38,18 +38,22 @@ export function stopRecording(): RawRecordedEvent[] {
 
 function addListeners(): void {
   document.addEventListener('click', handleClick, { capture: true, passive: true });
+  document.addEventListener('beforeinput', handleBeforeInput, { capture: true, passive: true });
   document.addEventListener('input', handleInput, { capture: true, passive: true });
   document.addEventListener('change', handleChange, { capture: true, passive: true });
   document.addEventListener('submit', handleSubmit, { capture: true, passive: true });
   document.addEventListener('copy', handleCopy, { capture: true, passive: true });
+  document.addEventListener('paste', handlePaste, { capture: true, passive: true });
 }
 
 function removeListeners(): void {
   document.removeEventListener('click', handleClick, { capture: true });
+  document.removeEventListener('beforeinput', handleBeforeInput, { capture: true });
   document.removeEventListener('input', handleInput, { capture: true });
   document.removeEventListener('change', handleChange, { capture: true });
   document.removeEventListener('submit', handleSubmit, { capture: true });
   document.removeEventListener('copy', handleCopy, { capture: true });
+  document.removeEventListener('paste', handlePaste, { capture: true });
 }
 
 // ──────────────────────────────────────────────
@@ -58,14 +62,14 @@ function removeListeners(): void {
 
 function handleClick(e: MouseEvent): void {
   if (!isRecording) return;
-  const el = e.target as Element;
+  const el = getRecordableClickTarget(e.target);
   if (!el || !isInteractable(el)) return;
 
   const tag = el.tagName.toLowerCase();
   if (tag === 'html' || tag === 'body') return;
 
-  // Don't record clicks on inputs — handled by input/change events
-  if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+  // Text-like inputs are handled by input/change events instead of clicks.
+  if (isTextEntryElement(el)) return;
 
   const target = buildTargetDescriptor(el);
   const event = makeEvent('click', target);
@@ -74,41 +78,55 @@ function handleClick(e: MouseEvent): void {
 
 function handleInput(e: Event): void {
   if (!isRecording) return;
-  const el = e.target as HTMLInputElement | HTMLTextAreaElement;
-  if (!el) return;
-
-  const tag = el.tagName.toLowerCase();
-  if (tag !== 'input' && tag !== 'textarea') return;
-
-  const type = (el as HTMLInputElement).type?.toLowerCase();
-  if (type === 'password' || type === 'hidden') return;
-
-  const target = buildTargetDescriptor(el);
+  const descriptor = getFillDescriptor(e.target);
+  if (!descriptor) return;
+  const { element, target, value } = descriptor;
 
   // Merge rapid typing into same element
-  if (el === lastFillTarget && lastFillEventId) {
+  if (element === lastFillTarget && lastFillEventId) {
     const existing = pendingEvents.find((ev) => ev.id === lastFillEventId);
     if (existing) {
-      existing.value = el.value;
+      existing.value = value;
       notifyBackground(existing);
       return;
     }
   }
 
-  const event = makeEvent('fill_input', target, el.value);
-  lastFillTarget = el;
+  const event = makeEvent('fill_input', target, value);
+  lastFillTarget = element;
   lastFillEventId = event.id;
   emitEvent(event);
 }
 
+function handleBeforeInput(e: InputEvent): void {
+  if (!isRecording) return;
+  if (!e.inputType.startsWith('insertFromPaste')) return;
+
+  queueMicrotask(() => {
+    handleInput(e);
+  });
+}
+
 function handleChange(e: Event): void {
   if (!isRecording) return;
-  const el = e.target as HTMLSelectElement;
-  if (el.tagName.toLowerCase() !== 'select') return;
+  const target = e.target;
+  if (!(target instanceof Element)) return;
 
-  const target = buildTargetDescriptor(el);
-  const event = makeEvent('select_option', target, el.value);
-  emitEvent(event);
+  if (target instanceof HTMLSelectElement) {
+    const descriptor = buildTargetDescriptor(target);
+    const event = makeEvent('select_option', descriptor, target.value);
+    emitEvent(event);
+    return;
+  }
+
+  if (target instanceof HTMLInputElement) {
+    const type = target.type.toLowerCase();
+    if (type === 'checkbox' || type === 'radio') {
+      const descriptor = buildTargetDescriptor(target);
+      const event = makeEvent('click', descriptor, target.checked ? 'checked' : 'unchecked');
+      emitEvent(event);
+    }
+  }
 }
 
 function handleSubmit(e: SubmitEvent): void {
@@ -135,16 +153,8 @@ function handleSubmit(e: SubmitEvent): void {
 function handleCopy(_e: ClipboardEvent): void {
   if (!isRecording) return;
 
-  // Use selection API — more reliable than clipboard data in content contexts
-  const selection = window.getSelection();
-  const text = selection?.toString().trim() ?? '';
+  const { text, sourceEl } = getCopyContext();
   if (!text || text.length < 2) return;
-
-  // Try to get the source element
-  const anchorNode = selection?.anchorNode;
-  const sourceEl = anchorNode?.nodeType === Node.TEXT_NODE
-    ? anchorNode.parentElement
-    : anchorNode as Element | null;
 
   const target = sourceEl instanceof Element
     ? buildTargetDescriptor(sourceEl)
@@ -162,6 +172,24 @@ function handleCopy(_e: ClipboardEvent): void {
     saveAs: undefined, // assigned by workflowBuilder
   };
   emitEvent(event);
+}
+
+function handlePaste(e: ClipboardEvent): void {
+  if (!isRecording) return;
+
+  const pastedText = e.clipboardData?.getData('text/plain').trim() ?? '';
+  if (!pastedText) return;
+
+  queueMicrotask(() => {
+    const descriptor = getFillDescriptor(e.target);
+    if (!descriptor) return;
+
+    const { target, value } = descriptor;
+    if (!value) return;
+
+    const event = makeEvent('fill_input', target, value);
+    emitEvent(event);
+  });
 }
 
 // ──────────────────────────────────────────────
@@ -195,4 +223,96 @@ function notifyBackground(event: RawRecordedEvent): void {
     source: 'content',
     payload: event,
   }).catch(() => {});
+}
+
+function getRecordableClickTarget(target: EventTarget | null): Element | null {
+  if (!(target instanceof Element)) return null;
+
+  return target.closest(
+    [
+      'button',
+      'a[href]',
+      '[role="button"]',
+      'input[type="button"]',
+      'input[type="submit"]',
+      'input[type="checkbox"]',
+      'input[type="radio"]',
+      'label',
+      'summary',
+    ].join(', ')
+  ) ?? target;
+}
+
+function isTextEntryElement(el: Element): boolean {
+  if (el instanceof HTMLTextAreaElement) return true;
+  if (el instanceof HTMLSelectElement) return true;
+  if (isContentEditableElement(el)) return true;
+  if (!(el instanceof HTMLInputElement)) return false;
+
+  const type = el.type.toLowerCase();
+  return !['button', 'submit', 'checkbox', 'radio', 'range', 'color', 'file'].includes(type);
+}
+
+function getCopyContext(): { text: string; sourceEl: Element | null } {
+  const selection = window.getSelection();
+  const selectedText = selection?.toString().trim() ?? '';
+  if (selectedText) {
+    const anchorNode = selection?.anchorNode;
+    const sourceEl = anchorNode?.nodeType === Node.TEXT_NODE
+      ? anchorNode.parentElement
+      : anchorNode instanceof Element
+        ? anchorNode
+        : null;
+
+    return { text: selectedText, sourceEl };
+  }
+
+  const active = document.activeElement;
+  if (
+    active instanceof HTMLInputElement ||
+    active instanceof HTMLTextAreaElement
+  ) {
+    const start = active.selectionStart ?? 0;
+    const end = active.selectionEnd ?? 0;
+    const text = active.value.slice(start, end).trim();
+    return { text, sourceEl: active };
+  }
+
+  return { text: '', sourceEl: null };
+}
+
+function getFillDescriptor(target: EventTarget | null): {
+  element: Element;
+  target: TargetDescriptor;
+  value: string;
+} | null {
+  if (!(target instanceof Element)) return null;
+
+  if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+    const type = target.type?.toLowerCase();
+    if (type === 'password' || type === 'hidden' || type === 'checkbox' || type === 'radio') {
+      return null;
+    }
+
+    return {
+      element: target,
+      target: buildTargetDescriptor(target),
+      value: target.value,
+    };
+  }
+
+  const editable = target.closest('[contenteditable="true"]');
+  if (editable instanceof Element) {
+    return {
+      element: editable,
+      target: buildTargetDescriptor(editable),
+      value: editable.textContent?.trim() ?? '',
+    };
+  }
+
+  return null;
+}
+
+function isContentEditableElement(el: Element): boolean {
+  return el.getAttribute('contenteditable') === 'true' || (el as HTMLElement).isContentEditable;
 }

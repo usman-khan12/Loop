@@ -72,18 +72,21 @@ async function execClick(step: WorkflowStep): Promise<{ success: boolean; error?
   const el = findTarget(step.target);
   if (!el) return { success: false, error: 'Element not found' };
 
+  if (el instanceof HTMLElement) {
+    el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+  }
   highlightElement(el);
   await delay(80);
 
-  // Try native click first
   if (el instanceof HTMLElement) {
     el.focus();
+    dispatchMouseSequence(el);
     el.click();
     return { success: true };
   }
 
-  // Fallback: dispatch mouse events
-  el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  dispatchMouseSequence(el);
+  el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, composed: true }));
   return { success: true };
 }
 
@@ -292,6 +295,20 @@ function findTarget(target?: TargetDescriptor): Element | null {
 
 function delay(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+function dispatchMouseSequence(el: Element): void {
+  const eventInit = {
+    bubbles: true,
+    cancelable: true,
+    composed: true,
+    view: window,
+  };
+
+  el.dispatchEvent(new PointerEvent('pointerdown', eventInit));
+  el.dispatchEvent(new MouseEvent('mousedown', eventInit));
+  el.dispatchEvent(new PointerEvent('pointerup', eventInit));
+  el.dispatchEvent(new MouseEvent('mouseup', eventInit));
 }
 
 // ──────────────────────────────────────────────

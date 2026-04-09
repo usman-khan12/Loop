@@ -1,5 +1,3 @@
-import contentScriptFile from '../content/index.ts?script';
-
 // ──────────────────────────────────────────────
 // Tab reference tracking (for recording)
 // Maps real tabId -> { ref, url, title }
@@ -72,7 +70,7 @@ export async function createAutomationWindow(
     automationTabIds[firstRef[0]] = win.tabs[0].id;
     // wait for first tab to load
     await waitForTabLoad(win.tabs[0].id);
-    await injectContentScript(win.tabs[0].id);
+    await ensureContentScript(win.tabs[0].id);
   }
 
   // Open remaining tabs in same window
@@ -86,7 +84,7 @@ export async function createAutomationWindow(
     if (tab.id) {
       automationTabIds[ref] = tab.id;
       await waitForTabLoad(tab.id);
-      await injectContentScript(tab.id);
+      await ensureContentScript(tab.id);
     }
   }
 
@@ -154,27 +152,21 @@ export async function waitForTabLoad(tabId: number, timeoutMs = 15_000): Promise
 const injectedTabs = new Set<number>();
 
 export async function ensureContentScript(tabId: number): Promise<void> {
-  if (injectedTabs.has(tabId)) {
-    // Verify it's still alive
-    const alive = await pingContentScript(tabId);
-    if (alive) return;
-    injectedTabs.delete(tabId);
-  }
-  await injectContentScript(tabId);
-}
-
-async function injectContentScript(tabId: number): Promise<void> {
-  try {
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      files: [contentScriptFile],
-    });
+  const alive = await pingContentScript(tabId);
+  if (alive) {
     injectedTabs.add(tabId);
-    // Small delay for script to initialize
-    await new Promise((r) => setTimeout(r, 300));
-  } catch (err) {
-    console.warn('[Loop TabManager] Could not inject content script into tab', tabId, err);
+    return;
   }
+
+  await waitForContentScript(tabId);
+
+  const ready = await pingContentScript(tabId);
+  if (ready) {
+    injectedTabs.add(tabId);
+    return;
+  }
+
+  console.warn('[Loop TabManager] Content script not ready in tab', tabId);
 }
 
 async function pingContentScript(tabId: number): Promise<boolean> {
@@ -195,4 +187,13 @@ export function markTabInjected(tabId: number): void {
 
 export function clearInjectedTabs(): void {
   injectedTabs.clear();
+}
+
+async function waitForContentScript(tabId: number, timeoutMs = 3_000): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const alive = await pingContentScript(tabId);
+    if (alive) return;
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
 }

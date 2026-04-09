@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useStore } from '../store';
 import { stepDescription, stepTypeIcon, truncate } from '../../shared/utils';
-import type { Workflow, WorkflowStep } from '../../shared/types';
+import type { Run, Workflow, WorkflowStep } from '../../shared/types';
 
 // ──────────────────────────────────────────────
 // Helpers
@@ -50,6 +50,7 @@ export default function WorkflowDetail() {
   const setView = useStore((s) => s.setView);
   const upsertWorkflow = useStore((s) => s.upsertWorkflow);
   const setSelectedWorkflow = useStore((s) => s.setSelectedWorkflow);
+  const setCurrentRun = useStore((s) => s.setCurrentRun);
   const [editingName, setEditingName] = useState(false);
   const [nameVal, setNameVal] = useState(workflow?.name ?? '');
   const [activeTab, setActiveTab] = useState<'steps' | 'variables'>('steps');
@@ -95,11 +96,15 @@ export default function WorkflowDetail() {
 
   async function handleRun() {
     const wf = useStore.getState().selectedWorkflow!;
-    await chrome.runtime.sendMessage({
+    const result = await chrome.runtime.sendMessage({
       type: 'RUN_WORKFLOW',
       source: 'sidepanel',
       payload: { workflow: wf },
-    });
+    }) as { success: boolean; run?: Run };
+
+    if (result?.run) {
+      setCurrentRun(result.run);
+    }
     setView('run');
   }
 

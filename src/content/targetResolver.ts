@@ -10,7 +10,9 @@ export function resolveTarget(target: TargetDescriptor): Element | null {
     () => trySelectorCandidates(target.selectorCandidates),
     () => tryXPathCandidates(target.xpathCandidates),
     () => tryLabelBased(target),
+    () => tryAttributeBased(target),
     () => tryTextBased(target),
+    () => tryContainerScoped(target),
   ];
 
   for (const strategy of strategies) {
@@ -103,17 +105,66 @@ function tryLabelBased(target: TargetDescriptor): Element | null {
 
 function tryTextBased(target: TargetDescriptor): Element | null {
   if (!target.text) return null;
-  const searchText = target.text.toLowerCase().trim();
+  const searchText = normalize(target.text);
+  if (!searchText) return null;
 
-  const candidates = [
-    ...document.querySelectorAll('button, a, [role="button"], input[type="submit"]'),
-  ];
+  const selector = target.kind === 'button' || target.kind === 'link'
+    ? 'button, a, [role="button"], input[type="submit"], input[type="button"], summary, label'
+    : `${target.tagName}, [role="${target.kind}"]`;
 
-  return (
-    candidates.find(
-      (el) => el.textContent?.toLowerCase().trim() === searchText
-    ) ?? null
-  );
+  const candidates = [...document.querySelectorAll(selector)];
+
+  const exact = candidates.find((el) => getComparableText(el) === searchText);
+  if (exact) return exact;
+
+  return candidates.find((el) => getComparableText(el).includes(searchText)) ?? null;
+}
+
+function tryAttributeBased(target: TargetDescriptor): Element | null {
+  const attrs = target.attributes;
+
+  if (attrs.id) {
+    const byId = document.getElementById(attrs.id);
+    if (byId) return byId;
+  }
+
+  if (attrs['data-testid']) {
+    const byTestId = document.querySelector(`[data-testid="${attrs['data-testid']}"]`);
+    if (byTestId) return byTestId;
+  }
+
+  if (attrs.name) {
+    const byName = document.querySelector(`${target.tagName}[name="${attrs.name}"]`);
+    if (byName) return byName;
+  }
+
+  if (attrs.href) {
+    const byHref = document.querySelector(`a[href="${attrs.href}"]`);
+    if (byHref) return byHref;
+  }
+
+  return null;
+}
+
+function tryContainerScoped(target: TargetDescriptor): Element | null {
+  const containerText = normalize(target.containerText);
+  if (!containerText) return null;
+
+  const containers = [
+    ...document.querySelectorAll('form, section, article, [role="group"], fieldset, .field, .row'),
+  ].filter((container) => normalize(container.textContent).includes(containerText));
+
+  for (const container of containers) {
+    const scoped = trySelectorCandidatesInRoot(target.selectorCandidates, container);
+    if (scoped) return scoped;
+
+    const candidates = container.querySelectorAll(target.tagName);
+    for (const candidate of candidates) {
+      if (matchesDescriptor(candidate, target)) return candidate;
+    }
+  }
+
+  return null;
 }
 
 // ──────────────────────────────────────────────
@@ -125,4 +176,52 @@ function isVisible(el: Element): boolean {
   if (rect.width === 0 && rect.height === 0) return false;
   const style = window.getComputedStyle(el);
   return style.display !== 'none' && style.visibility !== 'hidden';
+}
+
+function trySelectorCandidatesInRoot(candidates: string[], root: ParentNode): Element | null {
+  for (const selector of candidates) {
+    try {
+      const el = root.querySelector(selector);
+      if (el) return el;
+    } catch {
+      // invalid selector, skip
+    }
+  }
+  return null;
+}
+
+function matchesDescriptor(candidate: Element, target: TargetDescriptor): boolean {
+  const label = normalize(target.label ?? target.ariaLabel);
+  const placeholder = normalize(target.placeholder);
+  const text = normalize(target.text);
+  const candidateText = getComparableText(candidate);
+
+  if (label) {
+    const aria = normalize(candidate.getAttribute('aria-label'));
+    const id = candidate.getAttribute('id');
+    const byLabel = id
+      ? normalize(document.querySelector(`label[for="${CSS.escape(id)}"]`)?.textContent)
+      : '';
+    if (aria === label || byLabel === label) return true;
+  }
+
+  if (placeholder && normalize(candidate.getAttribute('placeholder')) === placeholder) {
+    return true;
+  }
+
+  if (text && candidateText === text) return true;
+
+  return false;
+}
+
+function getComparableText(el: Element): string {
+  if (el instanceof HTMLInputElement) {
+    return normalize(el.value || el.getAttribute('value') || el.getAttribute('aria-label'));
+  }
+
+  return normalize(el.textContent ?? el.getAttribute('aria-label'));
+}
+
+function normalize(value?: string | null): string {
+  return (value ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
 }
