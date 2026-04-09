@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Loop Test — Spreadsheet</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, 'Inter', sans-serif;
+      background: #F7F8FC;
+      color: #1A1D2E;
+      min-height: 100vh;
+      padding: 32px;
+    }
+    h1 {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .subtitle {
+      font-size: 13px;
+      color: #6B7194;
+      margin-bottom: 24px;
+    }
+    .table-wrapper {
+      background: white;
+      border-radius: 12px;
+      border: 1px solid #E2E6F0;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    thead th {
+      background: #F0F2F8;
+      padding: 12px 16px;
+      text-align: left;
+      font-weight: 600;
+      font-size: 11px;
+      color: #6B7194;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid #E2E6F0;
+    }
+    tbody tr {
+      border-bottom: 1px solid #F0F2F8;
+      cursor: pointer;
+      transition: background 0.12s ease;
+    }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: #F5F6FC; }
+    tbody tr.selected {
+      background: linear-gradient(135deg, #EBF3FF, #F5EEFF);
+      border-left: 3px solid #7EB6FF;
+    }
+    td {
+      padding: 12px 16px;
+      color: #1A1D2E;
+    }
+    td .name { font-weight: 600; }
+    td .email { color: #5B9BF7; }
+    td .company { color: #6B7194; }
+    .selected-info {
+      margin-top: 20px;
+      padding: 14px 18px;
+      background: white;
+      border-radius: 10px;
+      border: 1px solid #E2E6F0;
+      font-size: 13px;
+    }
+    .selected-info h3 { font-size: 12px; color: #9DA3C0; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
+    .field-row { display: flex; gap: 8px; margin-bottom: 8px; align-items: baseline; }
+    .field-label { font-size: 11px; color: #9DA3C0; width: 60px; flex-shrink: 0; }
+    .field-value { font-size: 13px; font-weight: 500; }
+    #selected-name { color: #1A1D2E; }
+    #selected-email { color: #5B9BF7; }
+    #selected-company { color: #6B7194; }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 100px;
+      font-size: 11px;
+      font-weight: 500;
+      background: linear-gradient(135deg, #EBF3FF, #F5EEFF);
+      color: #B088F0;
+      border: 1px solid #D4BAFC;
+      margin-left: 8px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Customer List <span class="badge">Test Spreadsheet</span></h1>
+  <p class="subtitle">Click any row to select it, then use Loop to extract and transfer the data.</p>
+
+  <div class="table-wrapper">
+    <table id="customer-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Name</th>
+          <th>Email</th>
+          <th>Company</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr data-name="Sarah Chen" data-email="sarah.chen@acme.io" data-company="Acme Corp">
+          <td>1</td>
+          <td><span class="name">Sarah Chen</span></td>
+          <td><span class="email">sarah.chen@acme.io</span></td>
+          <td><span class="company">Acme Corp</span></td>
+          <td><span style="color:#22C55E;font-weight:500">● Active</span></td>
+        </tr>
+        <tr data-name="James Rivera" data-email="j.rivera@globalinc.com" data-company="Global Inc">
+          <td>2</td>
+          <td><span class="name">James Rivera</span></td>
+          <td><span class="email">j.rivera@globalinc.com</span></td>
+          <td><span class="company">Global Inc</span></td>
+          <td><span style="color:#22C55E;font-weight:500">● Active</span></td>
+        </tr>
+        <tr data-name="Priya Patel" data-email="priya@techhive.co" data-company="TechHive Co">
+          <td>3</td>
+          <td><span class="name">Priya Patel</span></td>
+          <td><span class="email">priya@techhive.co</span></td>
+          <td><span class="company">TechHive Co</span></td>
+          <td><span style="color:#F59E0B;font-weight:500">● Pending</span></td>
+        </tr>
+        <tr data-name="Marcus Thompson" data-email="mthompson@vertex.ai" data-company="Vertex AI">
+          <td>4</td>
+          <td><span class="name">Marcus Thompson</span></td>
+          <td><span class="email">mthompson@vertex.ai</span></td>
+          <td><span class="company">Vertex AI</span></td>
+          <td><span style="color:#22C55E;font-weight:500">● Active</span></td>
+        </tr>
+        <tr data-name="Elena Kovacs" data-email="elena.k@novatech.eu" data-company="NovaTech EU">
+          <td>5</td>
+          <td><span class="name">Elena Kovacs</span></td>
+          <td><span class="email">elena.k@novatech.eu</span></td>
+          <td><span class="company">NovaTech EU</span></td>
+          <td><span style="color:#EF4444;font-weight:500">● Inactive</span></td>
+        </tr>
+        <tr data-name="David Kim" data-email="dkim@streamline.io" data-company="Streamline IO">
+          <td>6</td>
+          <td><span class="name">David Kim</span></td>
+          <td><span class="email">dkim@streamline.io</span></td>
+          <td><span class="company">Streamline IO</span></td>
+          <td><span style="color:#22C55E;font-weight:500">● Active</span></td>
+        </tr>
+        <tr data-name="Aisha Okonkwo" data-email="aisha@bridgecap.vc" data-company="BridgeCap VC">
+          <td>7</td>
+          <td><span class="name">Aisha Okonkwo</span></td>
+          <td><span class="email">aisha@bridgecap.vc</span></td>
+          <td><span class="company">BridgeCap VC</span></td>
+          <td><span style="color:#22C55E;font-weight:500">● Active</span></td>
+        </tr>
+        <tr data-name="Luca Ferrari" data-email="l.ferrari@milansoft.it" data-company="MilanSoft">
+          <td>8</td>
+          <td><span class="name">Luca Ferrari</span></td>
+          <td><span class="email">l.ferrari@milansoft.it</span></td>
+          <td><span class="company">MilanSoft</span></td>
+          <td><span style="color:#F59E0B;font-weight:500">● Pending</span></td>
+        </tr>
+        <tr data-name="Maya Johnson" data-email="maya.j@zenpath.com" data-company="ZenPath">
+          <td>9</td>
+          <td><span class="name">Maya Johnson</span></td>
+          <td><span class="email">maya.j@zenpath.com</span></td>
+          <td><span class="company">ZenPath</span></td>
+          <td><span style="color:#22C55E;font-weight:500">● Active</span></td>
+        </tr>
+        <tr data-name="Omar Farouk" data-email="o.farouk@arabanet.com" data-company="ArabANet">
+          <td>10</td>
+          <td><span class="name">Omar Farouk</span></td>
+          <td><span class="email">o.farouk@arabanet.com</span></td>
+          <td><span class="company">ArabANet</span></td>
+          <td><span style="color:#22C55E;font-weight:500">● Active</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="selected-info">
+    <h3>Selected Row</h3>
+    <div class="field-row">
+      <span class="field-label">Name</span>
+      <span class="field-value" id="selected-name">—</span>
+    </div>
+    <div class="field-row">
+      <span class="field-label">Email</span>
+      <span class="field-value" id="selected-email">—</span>
+    </div>
+    <div class="field-row">
+      <span class="field-label">Company</span>
+      <span class="field-value" id="selected-company">—</span>
+    </div>
+  </div>
+
+  <script>
+    const rows = document.querySelectorAll('#customer-table tbody tr');
+    rows.forEach(row => {
+      row.addEventListener('click', () => {
+        rows.forEach(r => r.classList.remove('selected'));
+        row.classList.add('selected');
+        document.getElementById('selected-name').textContent = row.dataset.name;
+        document.getElementById('selected-email').textContent = row.dataset.email;
+        document.getElementById('selected-company').textContent = row.dataset.company;
+      });
+    });
+  </script>
+</body>
+</html>

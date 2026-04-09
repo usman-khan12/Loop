@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Loop Test — Contact Form</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, 'Inter', sans-serif;
+      background: #F7F8FC;
+      color: #1A1D2E;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 32px;
+    }
+    .card {
+      background: white;
+      border-radius: 16px;
+      border: 1px solid #E2E6F0;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.06);
+      padding: 32px;
+      width: 100%;
+      max-width: 440px;
+    }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 100px;
+      font-size: 11px;
+      font-weight: 500;
+      background: linear-gradient(135deg, #EBF3FF, #F5EEFF);
+      color: #B088F0;
+      border: 1px solid #D4BAFC;
+      margin-left: 8px;
+    }
+    h1 { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+    .subtitle { font-size: 13px; color: #6B7194; margin-bottom: 28px; }
+    .form-group { margin-bottom: 18px; }
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: #6B7194;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+    input[type="text"], input[type="email"] {
+      width: 100%;
+      padding: 11px 14px;
+      border: 1px solid #E2E6F0;
+      border-radius: 8px;
+      font-size: 14px;
+      font-family: inherit;
+      color: #1A1D2E;
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      background: #FAFBFF;
+    }
+    input:focus {
+      border-color: #7EB6FF;
+      box-shadow: 0 0 0 3px rgba(126, 182, 255, 0.15);
+      background: white;
+    }
+    .submit-btn {
+      width: 100%;
+      padding: 13px;
+      background: linear-gradient(135deg, #7EB6FF, #C4A3FF);
+      color: white;
+      border: none;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      margin-top: 8px;
+      box-shadow: 0 2px 10px rgba(91, 155, 247, 0.3);
+    }
+    .submit-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(91, 155, 247, 0.4);
+    }
+    .submit-btn:active { transform: translateY(0); }
+
+    /* Success state */
+    .success-state {
+      display: none;
+      text-align: center;
+      padding: 20px 0;
+    }
+    .success-icon {
+      width: 56px;
+      height: 56px;
+      background: linear-gradient(135deg, #EBF3FF, #F5EEFF);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      margin: 0 auto 16px;
+    }
+    .success-title {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .success-desc {
+      font-size: 13px;
+      color: #6B7194;
+      margin-bottom: 20px;
+      line-height: 1.5;
+    }
+    .submitted-data {
+      background: #F7F8FC;
+      border-radius: 10px;
+      padding: 14px;
+      text-align: left;
+      margin-bottom: 20px;
+    }
+    .submitted-row {
+      display: flex;
+      gap: 8px;
+      padding: 5px 0;
+      font-size: 13px;
+      border-bottom: 1px solid #E2E6F0;
+    }
+    .submitted-row:last-child { border-bottom: none; }
+    .submitted-label { color: #9DA3C0; width: 70px; flex-shrink: 0; }
+    .submitted-val { color: #1A1D2E; font-weight: 500; }
+    .reset-btn {
+      background: #F0F2F8;
+      color: #6B7194;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 20px;
+      font-size: 13px;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .reset-btn:hover { background: #E5E8F4; color: #1A1D2E; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <!-- Form -->
+    <div id="form-view">
+      <h1>Contact Form <span class="badge">Test Form</span></h1>
+      <p class="subtitle">Use Loop to auto-fill this form from your spreadsheet data.</p>
+
+      <form id="contact-form" novalidate>
+        <div class="form-group">
+          <label for="input-name">Full Name</label>
+          <input
+            type="text"
+            id="input-name"
+            name="name"
+            placeholder="Enter full name"
+            autocomplete="off"
+          />
+        </div>
+        <div class="form-group">
+          <label for="input-email">Email Address</label>
+          <input
+            type="email"
+            id="input-email"
+            name="email"
+            placeholder="Enter email address"
+            autocomplete="off"
+          />
+        </div>
+        <div class="form-group">
+          <label for="input-company">Company</label>
+          <input
+            type="text"
+            id="input-company"
+            name="company"
+            placeholder="Enter company name"
+            autocomplete="off"
+          />
+        </div>
+        <button type="submit" class="submit-btn" id="btn-submit-form">
+          Submit Contact
+        </button>
+      </form>
+    </div>
+
+    <!-- Success state -->
+    <div id="success-view" class="success-state">
+      <div class="success-icon">✓</div>
+      <div class="success-title">Form Submitted!</div>
+      <div class="success-desc" id="success-msg">The contact has been recorded successfully.</div>
+
+      <div class="submitted-data">
+        <div class="submitted-row">
+          <span class="submitted-label">Name</span>
+          <span class="submitted-val" id="show-name">—</span>
+        </div>
+        <div class="submitted-row">
+          <span class="submitted-label">Email</span>
+          <span class="submitted-val" id="show-email">—</span>
+        </div>
+        <div class="submitted-row">
+          <span class="submitted-label">Company</span>
+          <span class="submitted-val" id="show-company">—</span>
+        </div>
+      </div>
+
+      <button class="reset-btn" id="btn-reset">Submit Another</button>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById('contact-form');
+    const formView = document.getElementById('form-view');
+    const successView = document.getElementById('success-view');
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const name = document.getElementById('input-name').value;
+      const email = document.getElementById('input-email').value;
+      const company = document.getElementById('input-company').value;
+
+      document.getElementById('show-name').textContent = name || '—';
+      document.getElementById('show-email').textContent = email || '—';
+      document.getElementById('show-company').textContent = company || '—';
+
+      document.getElementById('success-msg').textContent =
+        `${name} from ${company} has been recorded.`;
+
+      formView.style.display = 'none';
+      successView.style.display = 'block';
+    });
+
+    document.getElementById('btn-reset').addEventListener('click', () => {
+      form.reset();
+      formView.style.display = 'block';
+      successView.style.display = 'none';
+    });
+  </script>
+</body>
+</html>

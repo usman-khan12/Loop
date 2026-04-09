@@ -1,0 +1,206 @@
+import { useEffect, useRef, useState } from 'react';
+import { useStore } from '../store';
+import { stepDescription, stepTypeIcon, formatTimestamp } from '../../shared/utils';
+import type { RawRecordedEvent } from '../../shared/types';
+
+export default function RecordingView() {
+  const setView = useStore((s) => s.setView);
+
+  const recordedEvents = useStore((s) => s.recordedEvents);
+  const eventCount = useStore((s) => s.eventCount);
+  const upsertWorkflow = useStore((s) => s.upsertWorkflow);
+  const setSelectedWorkflow = useStore((s) => s.setSelectedWorkflow);
+  const clearRecordingEvents = useStore((s) => s.clearRecordingEvents);
+
+  const feedRef = useRef<HTMLDivElement>(null);
+  const [elapsedSecs, setElapsedSecs] = useState(0);
+  const startRef = useRef(Date.now());
+  const [markerMode, setMarkerMode] = useState(false);
+
+  // Timer
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setElapsedSecs(Math.floor((Date.now() - startRef.current) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Auto-scroll feed
+  useEffect(() => {
+    if (feedRef.current) {
+      feedRef.current.scrollTop = feedRef.current.scrollHeight;
+    }
+  }, [recordedEvents]);
+
+  async function handleStop() {
+    try {
+      const result = await chrome.runtime.sendMessage({
+        type: 'STOP_RECORDING',
+        source: 'sidepanel',
+      }) as { success: boolean; workflow?: { id: string; name: string; steps: unknown[] } };
+
+      if (result?.workflow) {
+        upsertWorkflow(result.workflow as never);
+        setSelectedWorkflow(result.workflow as never);
+        clearRecordingEvents();
+        setView('workflow-detail');
+      } else {
+        setView('home');
+      }
+    } catch (err) {
+      console.error('Stop recording error:', err);
+      setView('home');
+    }
+  }
+
+  async function handleMarkVariable() {
+    if (markerMode) {
+      // Deactivate
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab?.id) {
+        chrome.tabs.sendMessage(tab.id, {
+          type: 'MARK_VARIABLE_MODE',
+          source: 'background',
+          payload: { active: false },
+        }).catch(() => {});
+      }
+      setMarkerMode(false);
+    } else {
+      // Activate on current tab
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab?.id) {
+        chrome.tabs.sendMessage(tab.id, {
+          type: 'MARK_VARIABLE_MODE',
+          source: 'background',
+          payload: { active: true },
+        }).catch(() => {});
+      }
+      setMarkerMode(true);
+    }
+  }
+
+  const mins = Math.floor(elapsedSecs / 60);
+  const secs = elapsedSecs % 60;
+  const timerStr = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+
+  return (
+    <div className="sp-root">
+      {/* Header */}
+      <div className="sp-header">
+        <div className="sp-logo">
+          <span className="rec-indicator" />
+          <span style={{ fontWeight: 600, fontSize: 14, marginLeft: 6 }}>Recording…</span>
+        </div>
+        <span style={{
+          fontFamily: 'monospace',
+          fontSize: 'var(--font-size-md)',
+          color: 'var(--color-recording)',
+          fontWeight: 600,
+        }}>
+          {timerStr}
+        </span>
+      </div>
+
+      {/* Content */}
+      <div className="sp-content" style={{ display: 'flex', flexDirection: 'column' }}>
+        {/* Stats bar */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          padding: '10px 16px',
+          background: 'var(--color-recording-bg)',
+          borderBottom: '1px solid #FECACA',
+        }}>
+          <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-recording)' }}>
+            {eventCount} action{eventCount !== 1 ? 's' : ''} captured
+          </span>
+          <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)' }}>
+            Switch tabs to record tab switches
+          </span>
+        </div>
+
+        {/* Mark variable button */}
+        <div style={{ padding: '10px 16px' }}>
+          <button
+            className={markerMode ? 'btn-danger' : 'btn-secondary'}
+            style={{ width: 'auto', padding: '7px 14px', fontSize: 'var(--font-size-sm)' }}
+            onClick={handleMarkVariable}
+            id="btn-mark-variable"
+          >
+            {markerMode ? '✕ Cancel Mark' : '🎯 Mark as Variable'}
+          </button>
+          {markerMode && (
+            <p style={{
+              fontSize: 'var(--font-size-xs)',
+              color: 'var(--color-accent-pink)',
+              marginTop: 6,
+              lineHeight: 1.5,
+            }}>
+              Click any element on the page to save its value as a variable.
+            </p>
+          )}
+        </div>
+
+        {/* Event feed */}
+        <p className="sp-section-title">Captured Actions</p>
+
+        <div
+          ref={feedRef}
+          style={{
+            flex: 1,
+            overflowY: 'auto',
+            padding: '0 0 16px',
+          }}
+        >
+          {recordedEvents.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-state-icon" style={{ fontSize: 28 }}>🖱️</div>
+              <div className="empty-state-title" style={{ fontSize: 13 }}>No actions yet</div>
+              <div className="empty-state-desc">
+                Click, type, and interact with the page. Your actions will appear here.
+              </div>
+            </div>
+          ) : (
+            recordedEvents.map((event, i) => (
+              <RecordingEventRow key={event.id} event={event} index={i} />
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* Stop button */}
+      <div style={{ padding: '12px 16px', borderTop: '1px solid var(--color-border-light)', flexShrink: 0 }}>
+        <button className="btn-danger" onClick={handleStop} id="btn-stop-recording">
+          ⏹ Stop Recording
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function RecordingEventRow({ event, index }: { event: RawRecordedEvent; index: number }) {
+  const icon = stepTypeIcon(event.type);
+  const desc = stepDescription({
+    type: event.type,
+    target: event.target as { text?: string; label?: string; kind?: string; placeholder?: string },
+    url: event.url,
+    saveAs: event.saveAs,
+    value: event.value,
+    valueTemplate: event.value,
+  });
+
+  return (
+    <div className="step-item animate-fade-in" style={{ animationDelay: `${Math.min(index * 20, 200)}ms` }}>
+      <span className="step-icon">{icon}</span>
+      <div className="step-body">
+        <div className="step-desc" title={desc}>{desc}</div>
+        {event.saveAs && (
+          <span className="var-chip" style={{ marginTop: 3, display: 'inline-flex' }}>
+            {'{{' + event.saveAs + '}}'}
+          </span>
+        )}
+        <div className="step-meta">{formatTimestamp(event.timestamp)}</div>
+      </div>
+    </div>
+  );
+}
