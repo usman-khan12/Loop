@@ -4,9 +4,7 @@
  */
 
 import { startRecording, stopRecording } from './recorder';
-import { executeStep } from './executor';
-import { highlightElement, clearHighlight } from './executor';
-import { activateMarkerMode, deactivateMarkerMode } from './variableMarker';
+import { executeStep, highlightElement, clearHighlight } from './executor';
 import { buildTargetDescriptor } from './domUtils';
 import { resolveTarget } from './targetResolver';
 import type { Message, WorkflowStep } from '../shared/types';
@@ -26,7 +24,7 @@ chrome.runtime.onMessage.addListener((msg: Message, _sender, sendResponse) => {
   handleMessage(msg).then(sendResponse).catch((err) => {
     sendResponse({ success: false, error: String(err) });
   });
-  return true; // keep channel open
+  return true;
 });
 
 async function handleMessage(msg: Message): Promise<unknown> {
@@ -43,8 +41,7 @@ async function handleMessage(msg: Message): Promise<unknown> {
         step: WorkflowStep;
         variables: Record<string, string>;
       };
-      const result = await executeStep(step, variables);
-      return result;
+      return await executeStep(step, variables);
     }
 
     case 'HIGHLIGHT_ELEMENT': {
@@ -57,23 +54,6 @@ async function handleMessage(msg: Message): Promise<unknown> {
     case 'CLEAR_HIGHLIGHT':
       clearHighlight();
       return { success: true };
-
-    case 'MARK_VARIABLE_MODE': {
-      const { active } = msg.payload as { active: boolean };
-      if (active) {
-        activateMarkerMode((varName, value, target) => {
-          chrome.runtime.sendMessage({
-            type: 'VARIABLE_MARKED',
-            source: 'content',
-            payload: { varName, value, target },
-          });
-          deactivateMarkerMode();
-        });
-      } else {
-        deactivateMarkerMode();
-      }
-      return { success: true };
-    }
 
     default:
       return null;

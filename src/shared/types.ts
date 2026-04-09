@@ -52,6 +52,8 @@ export interface WorkflowStep {
   value?: string;
   valueTemplate?: string;
   saveAs?: string;
+  /** ID of the extract_text step that auto-linked to this fill — for traceability */
+  saveAsSource?: string;
   timeout?: number;
   description?: string;
   /** For batch mode — which row field this step reads */

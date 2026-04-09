@@ -10,5 +10,3 @@ export const STEP_DELAY = 300; // ms between steps
 export const POLL_INTERVAL = 200; // ms for element polling
 
 export const VERSION = '1.0.0';
-
-export const CONTENT_SCRIPT_PATH = 'src/content/index.ts';

@@ -1,11 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { useStore } from '../store';
 import { stepDescription, stepTypeIcon, formatTimestamp } from '../../shared/utils';
 import type { RawRecordedEvent } from '../../shared/types';
 
 export default function RecordingView() {
   const setView = useStore((s) => s.setView);
-
   const recordedEvents = useStore((s) => s.recordedEvents);
   const eventCount = useStore((s) => s.eventCount);
   const upsertWorkflow = useStore((s) => s.upsertWorkflow);
@@ -13,14 +12,17 @@ export default function RecordingView() {
   const clearRecordingEvents = useStore((s) => s.clearRecordingEvents);
 
   const feedRef = useRef<HTMLDivElement>(null);
-  const [elapsedSecs, setElapsedSecs] = useState(0);
   const startRef = useRef(Date.now());
-  const [markerMode, setMarkerMode] = useState(false);
+  const timerRef = useRef<HTMLSpanElement>(null);
 
-  // Timer
+  // Tick the timer without React re-renders
   useEffect(() => {
     const interval = setInterval(() => {
-      setElapsedSecs(Math.floor((Date.now() - startRef.current) / 1000));
+      if (!timerRef.current) return;
+      const secs = Math.floor((Date.now() - startRef.current) / 1000);
+      const m = Math.floor(secs / 60);
+      const s = secs % 60;
+      timerRef.current.textContent = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
     }, 1000);
     return () => clearInterval(interval);
   }, []);
@@ -53,36 +55,6 @@ export default function RecordingView() {
     }
   }
 
-  async function handleMarkVariable() {
-    if (markerMode) {
-      // Deactivate
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (tab?.id) {
-        chrome.tabs.sendMessage(tab.id, {
-          type: 'MARK_VARIABLE_MODE',
-          source: 'background',
-          payload: { active: false },
-        }).catch(() => {});
-      }
-      setMarkerMode(false);
-    } else {
-      // Activate on current tab
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (tab?.id) {
-        chrome.tabs.sendMessage(tab.id, {
-          type: 'MARK_VARIABLE_MODE',
-          source: 'background',
-          payload: { active: true },
-        }).catch(() => {});
-      }
-      setMarkerMode(true);
-    }
-  }
-
-  const mins = Math.floor(elapsedSecs / 60);
-  const secs = elapsedSecs % 60;
-  const timerStr = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-
   return (
     <div className="sp-root">
       {/* Header */}
@@ -91,54 +63,40 @@ export default function RecordingView() {
           <span className="rec-indicator" />
           <span style={{ fontWeight: 600, fontSize: 14, marginLeft: 6 }}>Recording…</span>
         </div>
-        <span style={{
-          fontFamily: 'monospace',
-          fontSize: 'var(--font-size-md)',
-          color: 'var(--color-recording)',
-          fontWeight: 600,
-        }}>
-          {timerStr}
+        <span
+          ref={timerRef}
+          style={{
+            fontFamily: 'monospace',
+            fontSize: 'var(--font-size-md)',
+            color: 'var(--color-recording)',
+            fontWeight: 600,
+          }}
+        >
+          00:00
         </span>
       </div>
 
       {/* Content */}
       <div className="sp-content" style={{ display: 'flex', flexDirection: 'column' }}>
-        {/* Stats bar */}
+        {/* Stats + hint bar */}
         <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
           padding: '10px 16px',
           background: 'var(--color-recording-bg)',
           borderBottom: '1px solid #FECACA',
         }}>
-          <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-recording)' }}>
-            {eventCount} action{eventCount !== 1 ? 's' : ''} captured
-          </span>
-          <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)' }}>
-            Switch tabs to record tab switches
-          </span>
-        </div>
-
-        {/* Mark variable button */}
-        <div style={{ padding: '10px 16px' }}>
-          <button
-            className={markerMode ? 'btn-danger' : 'btn-secondary'}
-            style={{ width: 'auto', padding: '7px 14px', fontSize: 'var(--font-size-sm)' }}
-            onClick={handleMarkVariable}
-            id="btn-mark-variable"
-          >
-            {markerMode ? '✕ Cancel Mark' : '🎯 Mark as Variable'}
-          </button>
-          {markerMode && (
-            <p style={{
-              fontSize: 'var(--font-size-xs)',
-              color: 'var(--color-accent-pink)',
-              marginTop: 6,
-              lineHeight: 1.5,
-            }}>
-              Click any element on the page to save its value as a variable.
-            </p>
-          )}
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+            <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-recording)', fontWeight: 500 }}>
+              {eventCount} action{eventCount !== 1 ? 's' : ''} captured
+            </span>
+          </div>
+          <p style={{
+            fontSize: 11,
+            color: '#D97070',
+            lineHeight: 1.5,
+            margin: 0,
+          }}>
+            💡 <strong>Copy</strong> from a source tab, then <strong>paste</strong> into a form — Loop auto-detects variables.
+          </p>
         </div>
 
         {/* Event feed */}
@@ -146,11 +104,7 @@ export default function RecordingView() {
 
         <div
           ref={feedRef}
-          style={{
-            flex: 1,
-            overflowY: 'auto',
-            padding: '0 0 16px',
-          }}
+          style={{ flex: 1, overflowY: 'auto', padding: '0 0 16px' }}
         >
           {recordedEvents.length === 0 ? (
             <div className="empty-state">
@@ -171,7 +125,7 @@ export default function RecordingView() {
       {/* Stop button */}
       <div style={{ padding: '12px 16px', borderTop: '1px solid var(--color-border-light)', flexShrink: 0 }}>
         <button className="btn-danger" onClick={handleStop} id="btn-stop-recording">
-          ⏹ Stop Recording
+          ⏹ Stop & Save
         </button>
       </div>
     </div>
@@ -179,24 +133,38 @@ export default function RecordingView() {
 }
 
 function RecordingEventRow({ event, index }: { event: RawRecordedEvent; index: number }) {
-  const icon = stepTypeIcon(event.type);
-  const desc = stepDescription({
-    type: event.type,
-    target: event.target as { text?: string; label?: string; kind?: string; placeholder?: string },
-    url: event.url,
-    saveAs: event.saveAs,
-    value: event.value,
-    valueTemplate: event.value,
-  });
+  const icon = event.type === 'extract_text' ? '📋' : stepTypeIcon(event.type);
+  const isExtract = event.type === 'extract_text';
+
+  const desc = isExtract
+    ? `Copied "${(event.value ?? '').slice(0, 30)}${(event.value?.length ?? 0) > 30 ? '…' : ''}"`
+    : stepDescription({
+        type: event.type,
+        target: event.target as { text?: string; label?: string; kind?: string; placeholder?: string },
+        url: event.url,
+        saveAs: event.saveAs,
+        value: event.value,
+        valueTemplate: event.value,
+      });
 
   return (
-    <div className="step-item animate-fade-in" style={{ animationDelay: `${Math.min(index * 20, 200)}ms` }}>
+    <div
+      className="step-item animate-fade-in"
+      style={{
+        animationDelay: `${Math.min(index * 20, 200)}ms`,
+        background: isExtract ? 'var(--gradient-accent-subtle)' : undefined,
+      }}
+    >
       <span className="step-icon">{icon}</span>
       <div className="step-body">
         <div className="step-desc" title={desc}>{desc}</div>
-        {event.saveAs && (
-          <span className="var-chip" style={{ marginTop: 3, display: 'inline-flex' }}>
-            {'{{' + event.saveAs + '}}'}
+        {isExtract && (
+          <span style={{
+            fontSize: 10,
+            color: 'var(--color-accent-purple)',
+            fontWeight: 500,
+          }}>
+            → will become a variable
           </span>
         )}
         <div className="step-meta">{formatTimestamp(event.timestamp)}</div>

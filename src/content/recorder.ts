@@ -7,6 +7,8 @@ const pendingEvents: RawRecordedEvent[] = [];
 let lastFillTarget: Element | null = null;
 let lastFillEventId: string | null = null;
 
+
+
 // ──────────────────────────────────────────────
 // Start / Stop
 // ──────────────────────────────────────────────
@@ -39,6 +41,7 @@ function addListeners(): void {
   document.addEventListener('input', handleInput, { capture: true, passive: true });
   document.addEventListener('change', handleChange, { capture: true, passive: true });
   document.addEventListener('submit', handleSubmit, { capture: true, passive: true });
+  document.addEventListener('copy', handleCopy, { capture: true, passive: true });
 }
 
 function removeListeners(): void {
@@ -46,6 +49,7 @@ function removeListeners(): void {
   document.removeEventListener('input', handleInput, { capture: true });
   document.removeEventListener('change', handleChange, { capture: true });
   document.removeEventListener('submit', handleSubmit, { capture: true });
+  document.removeEventListener('copy', handleCopy, { capture: true });
 }
 
 // ──────────────────────────────────────────────
@@ -57,11 +61,10 @@ function handleClick(e: MouseEvent): void {
   const el = e.target as Element;
   if (!el || !isInteractable(el)) return;
 
-  // Skip clicks on extension UI (though content scripts don't see those)
   const tag = el.tagName.toLowerCase();
   if (tag === 'html' || tag === 'body') return;
 
-  // Don't record clicks on inputs — those are handled by input/change events
+  // Don't record clicks on inputs — handled by input/change events
   if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
 
   const target = buildTargetDescriptor(el);
@@ -77,7 +80,6 @@ function handleInput(e: Event): void {
   const tag = el.tagName.toLowerCase();
   if (tag !== 'input' && tag !== 'textarea') return;
 
-  // Sensitive input types to skip
   const type = (el as HTMLInputElement).type?.toLowerCase();
   if (type === 'password' || type === 'hidden') return;
 
@@ -114,7 +116,6 @@ function handleSubmit(e: SubmitEvent): void {
   const form = e.target as HTMLFormElement;
   if (!form) return;
 
-  // Find submit button if possible
   const submitBtn =
     form.querySelector<Element>('[type="submit"]') ??
     form.querySelector<Element>('button:not([type])');
@@ -123,6 +124,43 @@ function handleSubmit(e: SubmitEvent): void {
     : buildTargetDescriptor(form);
 
   const event = makeEvent('submit_form', target);
+  emitEvent(event);
+}
+
+/**
+ * Copy handler — when the user copies text, we record an extract_text event.
+ * The workflowBuilder will later match this against fill_input events on other
+ * tabs that have the same value, automatically linking them via a variable.
+ */
+function handleCopy(_e: ClipboardEvent): void {
+  if (!isRecording) return;
+
+  // Use selection API — more reliable than clipboard data in content contexts
+  const selection = window.getSelection();
+  const text = selection?.toString().trim() ?? '';
+  if (!text || text.length < 2) return;
+
+  // Try to get the source element
+  const anchorNode = selection?.anchorNode;
+  const sourceEl = anchorNode?.nodeType === Node.TEXT_NODE
+    ? anchorNode.parentElement
+    : anchorNode as Element | null;
+
+  const target = sourceEl instanceof Element
+    ? buildTargetDescriptor(sourceEl)
+    : null;
+
+  // Emit extract_text event — the variable name will be inferred later
+  const event: RawRecordedEvent = {
+    id: generateId('ev'),
+    type: 'extract_text',
+    timestamp: new Date().toISOString(),
+    tabId: 0, // filled in by background
+    url: window.location.href,
+    target: target ?? undefined,
+    value: text,
+    saveAs: undefined, // assigned by workflowBuilder
+  };
   emitEvent(event);
 }
 
@@ -139,7 +177,7 @@ function makeEvent(
     id: generateId('ev'),
     type,
     timestamp: new Date().toISOString(),
-    tabId: 0, // filled in by background
+    tabId: 0,
     url: window.location.href,
     target,
     value,
@@ -156,7 +194,5 @@ function notifyBackground(event: RawRecordedEvent): void {
     type: 'RECORDING_EVENT',
     source: 'content',
     payload: event,
-  }).catch(() => {
-    // background may not be listening yet, that's OK
-  });
+  }).catch(() => {});
 }

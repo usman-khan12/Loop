@@ -1,4 +1,4 @@
-import { CONTENT_SCRIPT_PATH } from '../shared/constants';
+import contentScriptFile from '../content/index.ts?script';
 
 // ──────────────────────────────────────────────
 // Tab reference tracking (for recording)
@@ -167,7 +167,7 @@ async function injectContentScript(tabId: number): Promise<void> {
   try {
     await chrome.scripting.executeScript({
       target: { tabId },
-      files: [CONTENT_SCRIPT_PATH],
+      files: [contentScriptFile],
     });
     injectedTabs.add(tabId);
     // Small delay for script to initialize
